@@ -190,5 +190,12 @@ deploy-no-contrast: check-not-kind validate-env-vars download-helm-dependencies 
 uninstall:
 	helm uninstall cargocats --ignore-not-found; helm uninstall contrast-cargo-cats --ignore-not-found; helm uninstall simulation-console --ignore-not-found; kubectl delete configmap mysql-init-script opensearch-dashboard-config --ignore-not-found; kubectl delete namespace contrast-agent-operator --ignore-not-found;
 
+compose-up:
+	docker compose up -d --build
+	echo "\nVuln App: http://app.localhost (admin / password123)"
+
+compose-down:
+	docker compose down
+
 redeploy: uninstall deploy
 	@echo "Redeployment complete!"
