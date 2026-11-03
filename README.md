@@ -161,6 +161,8 @@ Before you can deploy Cargo Cats, ensure you have the following installed:
 
    > **Don't have Docker Desktop?** You can set up a local Kubernetes cluster using k3s or Minikube instead. See the **[Alternative Cluster Setup Guide](docs/cluster-setup.md)** for instructions.
 
+   > **Just want the app running locally without Kubernetes?** See **[Docker Compose](docs/docker-compose.md)** for a lightweight stack (no Contrast, WAF, Falco, or OpenSearch).
+
 2. **Helm** (Kubernetes package manager)
    ```bash
    # macOS with Homebrew

@@ -1,0 +1,114 @@
+# Lightweight local stack: app services + MySQL behind nginx.
+# No Contrast agents, ModSecurity, Falco, or OpenSearch (use `make deploy` for the full Kubernetes stack).
+# Ollama is opt-in: `AI_ENABLED=true docker compose --profile ai up`.
+
+x-app: &app
+  restart: unless-stopped
+  depends_on:
+    cargocats-db:
+      condition: service_healthy
+
+services:
+  cargocats-db:
+    image: mysql:9
+    environment:
+      MYSQL_ALLOW_EMPTY_PASSWORD: "true"
+      MYSQL_DATABASE: db
+      MYSQL_USER: cargocats
+      MYSQL_PASSWORD: cargocats
+    volumes:
+      - ./compose/mysql-init.sql:/docker-entrypoint-initdb.d/a-init.sql:ro
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-ucargocats", "-pcargocats"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  dataservice:
+    <<: *app
+    build: ./services/dataservice
+    image: dataservice:latest
+
+  frontgateservice:
+    <<: *app
+    build: ./services/frontgateservice
+    image: frontgateservice:latest
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:mysql://cargocats-db:3306/db?createDatabaseIfNotExist=true
+      SPRING_DATASOURCE_USERNAME: cargocats
+      SPRING_DATASOURCE_PASSWORD: cargocats
+
+  webhookservice:
+    <<: *app
+    build: ./services/webhookservice
+    image: webhookservice:latest
+
+  imageservice:
+    restart: unless-stopped
+    build: ./services/imageservice
+    image: imageservice:latest
+
+  labelservice:
+    restart: unless-stopped
+    build: ./services/labelservice
+    image: labelservice:latest
+
+  docservice:
+    restart: unless-stopped
+    build: ./services/docservice
+    image: docservice:latest
+    environment:
+      FLASK_ENV: development
+      PYTHONUNBUFFERED: "1"
+
+  reportservice:
+    restart: unless-stopped
+    build: ./services/reportservice
+    image: reportservice:latest
+    environment:
+      OLLAMA_BASE_URL: http://ollama:11434/v1
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-smollm2:135m}-tuned
+      AI_INSIGHTS_ENABLED: ${AI_ENABLED:-false}
+
+  aiservice:
+    restart: unless-stopped
+    build: ./services/aiservice
+    image: aiservice:latest
+    environment:
+      AI_DEMO_OPENAI_BASE_URL: http://ollama:11434/v1
+      AI_DEMO_MODEL: ${OLLAMA_MODEL:-smollm2:135m}-tuned
+      AI_DEMO_ENABLED: ${AI_ENABLED:-false}
+
+  ollama:
+    profiles: ["ai"]
+    image: ollama/ollama:0.7.1
+    restart: unless-stopped
+    environment:
+      OLLAMA_NUM_PARALLEL: "1"
+      OLLAMA_KEEP_ALIVE: 24h
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-smollm2:135m}
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        ollama serve &
+        OLLAMA_PID=$$!
+        until ollama list > /dev/null 2>&1; do sleep 1; done
+        ollama pull "$$OLLAMA_MODEL"
+        printf 'FROM %s\nPARAMETER num_thread 2\nPARAMETER num_ctx 2048\nPARAMETER num_predict 150\n' "$$OLLAMA_MODEL" > /tmp/Modelfile.tuned
+        ollama create "$$OLLAMA_MODEL-tuned" -f /tmp/Modelfile.tuned
+        wait $$OLLAMA_PID
+    volumes:
+      - ollama-data:/root/.ollama
+
+  nginx:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    depends_on:
+      - frontgateservice
+    ports:
+      - "${CARGOCATS_HTTP_PORT:-80}:80"
+    volumes:
+      - ./compose/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+
+volumes:
+  ollama-data:
